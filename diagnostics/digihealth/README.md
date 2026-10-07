@@ -5,7 +5,7 @@
 > saying “on by default” do not apply to the Sophie build. See
 > [the local diagnostic notes](../README.md).
 
-A performance and diagnostics mod for the Digitakt (mk1), OS 1.53. It adds
+A performance and diagnostics mod for the Digitakt (mk1), OS 1.53 and 1.54. It adds
 two rows to SETTINGS:
 
 - **FAST AUDIO** (on by default) runs the audio render's hot code from the
@@ -93,13 +93,16 @@ You need three things:
     (the Digitone's from elekloader 0.4.0).
   - **Other systems:** run elekloader from source with Python 3.9 or newer
     (see [its README](https://github.com/irpina/elekloader#install)). There
-    you also need the core for your device (`core-2.0a.elemod` for the
-    Digitakt, `core-dn1-2.0a.elemod` for the Digitone), attached to this
+    you also need the core for your device and OS (`core-2.0a.elemod` or
+    `core-2.1.elemod` for the Digitakt on 1.53, `core-2.1-os1.54.elemod`
+    on 1.54, `core-dn1-2.0a.elemod` for the Digitone), attached to this
     repository's releases too.
-- **This mod:** `digihealth-1.0.elemod` for the Digitakt mk1, or
-  `digihealth-1.1.elemod` for the Digitone mk1, from
-  [this repository's releases](https://github.com/irpina/digihealth/releases/latest).
-- **The stock OS file:** `Digitakt_OS1.53.syx`, from
+- **This mod**, from
+  [this repository's releases](https://github.com/irpina/digihealth/releases/latest):
+  `digihealth-1.0.elemod` for the Digitakt mk1 on OS 1.53,
+  `digihealth-1.0-os1.54.elemod` on OS 1.54 (the same mod), or
+  `digihealth-1.1.elemod` for the Digitone mk1.
+- **The stock OS file:** `Digitakt_OS1.54.syx` or `Digitakt_OS1.53.syx`, from
   [Elektron's Digitakt downloads](https://www.elektron.se/support-downloads/digitakt),
   or `Digitone_and_Digitone_Keys_OS1.43.syx`, from Elektron's Digitone
   downloads (the `.zip` works as it is). elekloader recognises the file by
@@ -109,8 +112,8 @@ Then build your OS in elekloader's window:
 
 1. **Your stock OS file:** elekloader asks for it the first time; **Change
    stock firmware...** (top right) picks another.
-2. **+ Install from file...**: choose the digihealth for your device. From
-   source, install its core the same way.
+2. **+ Install from file...**: choose the digihealth for your device and
+   OS. From source, install its core the same way.
 3. **Tick digihealth.** core is ticked with it. The check below the list should
    say "No conflicts ... Ready to build". To add other mods, such as [digislicer](https://github.com/irpina/digislicer), install and tick them as well.
 4. **OS version shown**: the 4 characters the unit will show, for example
@@ -130,9 +133,9 @@ Don't turn it off until the upgrade is done.
 Or on the command line (elekloader from source):
 
 ```bash
-python -m elekloader.patch --stock Digitakt_OS1.53.syx \
-    --mod core-2.0a.elemod --mod digihealth-1.0.elemod \
-    --out Digitakt_OS1.53-health.syx --version DH10
+python -m elekloader.patch --stock Digitakt_OS1.54.syx \
+    --mod core-2.1-os1.54.elemod --mod digihealth-1.0-os1.54.elemod \
+    --out Digitakt_OS1.54-health.syx --version DH10
 ```
 
 **Recovery:** elekloader never changes the bootloader, so the stock OS
@@ -149,11 +152,13 @@ Windows, inside WSL) and elekloader, importable (installed, or on
 
 ```bash
 python build.py --stock Digitakt_OS1.53.syx      # -> out/digihealth-1.0.elemod
+python build.py --stock Digitakt_OS1.54.syx      # -> out/digihealth-1.0-os1.54.elemod
 python build.py --stock Digitone_and_Digitone_Keys_OS1.43.syx   # -> out/digihealth-1.1.elemod
 python -m elekloader.lint out/digihealth-1.0.elemod --stock Digitakt_OS1.53.syx --with core-2.0a.elemod
 ```
 
-`build.py`, not `elekloader.sdk.build` alone. FAST AUDIO needs parts
+Use `build.py`, not `elekloader.sdk.build` alone, with an elekloader that
+knows `mod.json`'s `ports` (0.4.0 or later). FAST AUDIO needs parts
 worked out from your stock file:
 - the checks that the code block can run from the SRAM;
 - its fix-ups;
@@ -164,11 +169,11 @@ them to elekloader's SDK.
 
 | file | |
 |---|---|
-| `mod.json` | the mod: its sites, handlers, tables and resources; `fast_audio` is `build.py`'s input |
+| `mod.json` | the mod: its sites, handlers, tables and resources; `fast_audio` is `build.py`'s input; under `ports`, 1.54's sites |
 | `build.py` | FAST AUDIO's plan from the stock file, then the SDK |
 | `fastaudio.s` | the FAST AUDIO row, the copy, the stubs' switch and the watchdog |
 | `sysinfo.s` | the SYSTEM INFO row and readout, the render and idle timing, the USB channel |
-| `os153.inc` | the stock routines it calls |
+| `os153.inc`, `os154.inc` | the stock routines it calls, for each OS (1.54's port defines `OS154`) |
 | `dn1/mod.json`, `dn1/dn143.inc` | the Digitone mk1's mod (SYSTEM INFO; `sysinfo.s` with `DN143`) and its stock routines |
 | `tools/digiusb.py`, `tools/winmidi.py` | the USB channel's other end |
 
@@ -205,6 +210,22 @@ mods through the real bootloader.
   - Its routines and sites are the Digitakt 1.53's found again in 1.43: the
     same code, instruction for instruction, but for its addresses.
   - Not yet on a unit, and the USB channel not yet tried.
+- **The Digitakt mk1 on OS 1.54** (the same mod, with 1.54's
+  addresses), in the emulator:
+  - core + digihealth against stock 1.54: every stage passes, and the
+    check's nine screens are identical, FAST AUDIO on.
+  - With digislicer and digineighbor too, against the same four for
+    1.53: the FAST AUDIO script (on, playing, off, playing) is
+    identical screen for screen. With SYSTEM INFO on, its RAM page
+    reads the same on both; its two pages alternate at different
+    moments. 1.54's CPU page read "CPU 10%  DSP 3%/45%" while playing.
+    The emulator's cold boot has no samples, so these runs play
+    silence: they check the screens and that nothing sounds, not
+    the audio of a playing sample.
+  - FAST AUDIO copies the same render block in 1.54, at the same
+    addresses; build.py plans its fix-ups and stubs from the 1.54 file
+    (10 and 14, as for 1.53). Bit-exact audio has not been measured on
+    1.54, nor tried on a unit.
 
 ## Licence
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Build digihealth's .elemod for the device your stock file is for.
 
-    python build.py --stock Digitakt_OS1.53.syx [--out DIR]
+    python build.py --stock Digitakt_OS1.53.syx [--out DIR]          (or 1.54)
     python build.py --stock Digitone_and_Digitone_Keys_OS1.43.syx [--out DIR]
 
 On the Digitone mk1 it is SYSTEM INFO alone (dn1/mod.json), which the SDK
@@ -131,13 +131,14 @@ def main(argv=None):
     os.makedirs(work, exist_ok=True)
     try:
         stock = syx.Syx.load(a.stock)
-        dev, _rel = devices.identify(stock.sha256)
+        dev, rel = devices.identify(stock.sha256)
         if dev.key == 'digitone-mk1':
             path, m = sdk.build(os.path.join(HERE, 'dn1'), a.stock, out)
             print('BUILT %s' % path)
             print('  %s: .run %d, .bss %d bytes; %d sites, %d relocations; SYSTEM INFO only'
                   % (m.label(), m.size('.run'), m.size('.bss'), len(m.sites), len(m.relocs)))
             return 0
+        mod, _ported = sdk.for_release(mod, dev, rel)    # this OS's "ports" entry, if any
         image = stock.section(dev.main_section)
         extra, nfix, nstub = generate(cf, mod, image, dev.main_load, work)
         path, m = sdk.build(HERE, a.stock, out, extra)

@@ -3,8 +3,12 @@
 | timing, and the read-only USB diagnostics channel (tools/digiusb.py).
         .ifdef  DN143                   | the Digitone mk1 1.43 (dn1/mod.json)
         .include "dn143.inc"
+        .else
+        .ifdef  OS154                   | the Digitakt mk1 1.54 (mod.json's port)
+        .include "os154.inc"
         .else                           | the Digitakt mk1 1.53
         .include "os153.inc"
+        .endif
         .endif
 
         .equ TICKS_PER_S, 30            | the UI's compose check runs at 30 Hz

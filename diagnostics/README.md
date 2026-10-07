@@ -2,7 +2,8 @@
 
 The S027 build bundles digihealth's `SYSTEM INFO` monitor, from
 [irpina/digihealth](https://github.com/irpina/digihealth) at commit
-`72f0183383e67c3313146bf77df6f71dd7996a8f`. The copied source and
+`72f0183383e67c3313146bf77df6f71dd7996a8f`, with that repository's OS 1.54
+port (`6d2a956`, irpina/digihealth#4) applied on top. The copied source and
 license are in `digihealth/`. It is GPL-2.0-or-later; Sophie itself remains
 MIT licensed.
 

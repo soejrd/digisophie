@@ -3,7 +3,11 @@
 | and its watchdog. Its tables are the linker's: fa_copies (the block, then
 | every mod's .fast) and fa_fixups (the block's own references); build.py
 | generates them, and the call-site stubs (fa_stubs.s), from the stock file.
+        .ifdef  OS154                   | the Digitakt mk1 1.54 (mod.json's port)
+        .include "os154.inc"
+        .else                           | the Digitakt mk1 1.53
         .include "os153.inc"
+        .endif
 
 | ---- FAST AUDIO: hot render code run from the free on-chip SRAM ----------
 | The render runs ~17 KB of code a block through an 8 KB I-cache: about

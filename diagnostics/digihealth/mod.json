@@ -10,6 +10,15 @@
   {"addr": "0x40000438", "stock": "203cffffdfff", "op": "jsr", "target": "task_switch"},
   {"addr": "0x400d52f0", "stock": "47f9401b89aa", "op": "jsr", "target": "hook_sysex"}
  ],
+ "ports": {
+  "1.54": {
+   "defsym": {"OS154": "1"},
+   "sites": [
+    {"addr": "0x40000438", "stock": "203cffffdfff", "op": "jsr", "target": "task_switch"},
+    {"addr": "0x400d5518", "stock": "47f9401b8d2a", "op": "jsr", "target": "hook_sysex"}
+   ]
+  }
+ },
  "subscribe": [
   {"event": "ev_settings", "fn": "si_settings", "order": 10},
   {"event": "ev_settings", "fn": "fa_settings", "order": 20},

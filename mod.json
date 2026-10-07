@@ -28,6 +28,31 @@
     {"addr": "0x4000f5fc", "stock": "45f940078f0c", "op": "keep2", "target": "ds_prange_f"},
     {"addr": "0x40077fba", "stock": "49f94199e444", "op": "jsr", "target": "ds_inject_s"}
   ],
+  "ports": {
+    "1.54": {
+      "defsym": {"OS154": "1"},
+      "cflags": ["-DOS154"],
+      "sites": [
+        {"addr": "0x400657cc", "stock": "7203202f0004", "op": "jmp", "target": "ds_layout"},
+        {"addr": "0x4000fe8a", "stock": "222f00080c81000000a4", "op": "jmp", "target": "ds_lab_short"},
+        {"addr": "0x4000feac", "stock": "222f00080c81000000a4", "op": "jmp", "target": "ds_lab_long"},
+        {"addr": "0x40060b8e", "stock": "41f9401aa09c", "op": "jmp", "target": "ds_lfo_label"},
+        {"addr": "0x400a44d0", "stock": "2f3308282f06", "op": "jmp", "target": "ds_lfo_popup_name"},
+        {"addr": "0x400a454c", "stock": "2f3328302f06", "op": "jmp", "target": "ds_lfo_popup_fallback"},
+        {"addr": "0x40065de6", "stock": "2f30082c2f02", "op": "jmp", "target": "ds_lfo_overview_group"},
+        {"addr": "0x40065e5e", "stock": "70344c003800", "op": "jmp", "target": "ds_lfo_overview_name"},
+        {"addr": "0x4000f324", "stock": "4fefffec48d70c1c", "op": "jmp", "target": "ds_val_text"},
+        {"addr": "0x4000f2bc", "stock": "4fefffec48d7007c", "op": "jmp", "target": "ds_knob_gfx"},
+        {"addr": "0x40065794", "stock": "222f00040c81000000a4", "op": "jmp", "target": "ds_ui_rec"},
+        {"addr": "0x400657ee", "stock": "222f00040c81000000a4", "op": "jmp", "target": "ds_pop_text"},
+        {"addr": "0x4000ff20", "stock": "4eb940078f0c", "op": "keep2", "target": "ds_prange"},
+        {"addr": "0x400100c4", "stock": "4eb940078f0c", "op": "keep2", "target": "ds_prange"},
+        {"addr": "0x4000f534", "stock": "4eb940078f0c", "op": "keep2", "target": "ds_prange"},
+        {"addr": "0x4000f5fc", "stock": "45f940078f0c", "op": "keep2", "target": "ds_prange_f"},
+        {"addr": "0x40077fba", "stock": "49f94199f444", "op": "jsr", "target": "ds_inject_s"}
+      ]
+    }
+  },
   "contribute": [
     {"to": "core_machines", "order": 70, "data": "00000000", "relocs": [[0, "abs32", "sym:ds_machine", 0]]}
   ],
