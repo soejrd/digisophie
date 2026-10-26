@@ -78,6 +78,36 @@ hardware CPU use. The optional digihealth mod shows live CPU/DSP load and
 FAST AUDIO in SETTINGS, and `tests/timing_probe.py` can measure an emulated
 render path where a compatible digiemu runtime is available.
 
+`make golden-check` compiles `tests/golden_dump.c` against `HEAD` and against
+the worktree, then compares hashes of both the output samples and the whole
+`struct ds_voice`. Its 24 cases cover all models, default and extreme
+controls, odd and even block lengths, retriggering, model changes,
+sleep/wake, FOLD and a fixed control sweep. `tools/cycle_probe.py --static`
+sums digiemu's MCF54418RM instruction costs over `ds_render_core`; it is a
+code-shape measure, not a run. In this environment Unicorn exits with
+`SIGILL` at `mem_map`, so the dynamic timing probe and the emulator fallback
+to a hardware CPU-load reading are not available; compare static costs and
+instruction counts between builds of the same driver instead.
+
+## Baseline (2026-10-26, 23419d8)
+
+Recorded before the optimization work, with GCC 16.2.0 and binutils 2.47.
+
+| item | value |
+| --- | --- |
+| `make test` | pass |
+| `make cross-check` | pass |
+| `make golden-check` | 24 cases, `sha256 daf840ff34fbe4af` |
+| `out/cross/sophie.o` | `.text` 3968, `.rodata` 2342 bytes |
+| `ds_render_core` | 2916 bytes, 936 instructions, 1226 static cycles |
+| `ds_voice_render` (wrapper) | 638 bytes |
+| `ds_render_core` mix | 266 move, 114 shift, 84 alu, 84 moveq, 68 bcc, 57 `muls.l`, 46 movea, 26 bra, 23 sign-extend |
+
+The golden corpus is also identical against `fee5f51`, which confirms PR #5
+kept the render bit-exact. `-mcpu=54415`, `-mcpu=54455` and
+`-mcpu=54415 -mtune=cfv4e` produce byte-identical objects with this
+toolchain, so the target change is documentation and correctness only.
+
 Do not transplant RingTone's Digitone-specific EMAC, Core B, DMA-buffer or
 section-7 techniques into this Digitakt source hook. A new optimization
 should preserve the audible result or have an explicit sonic reason, pass
