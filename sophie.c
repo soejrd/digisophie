@@ -79,7 +79,7 @@ static inline __attribute__((always_inline)) int32_t ds_soft_clip(int32_t x)
 {
     uint32_t a = x < 0 ? 0u - (uint32_t)x : (uint32_t)x;
     int32_t y;
-    if (a >= 65536u) {
+    if (__builtin_expect(a >= 65536u, 0)) {
         /* Defensive fallback outside the oscillator's bounded range. */
         if (a > 131072u) a = 131072u;
         y = (int32_t)(((a >> 1) * Q15) / ((Q15 + a) >> 1));
