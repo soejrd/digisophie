@@ -23,6 +23,7 @@ tools/elekloader/mods/*/out/
 
 # Keep only the designated Markdown documents.
 *.md
+!SOPHIE_OPTIMIZATION_PLAN.md
 !README.md
 !THIRD_PARTY.md
 !DSP.md
