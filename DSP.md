@@ -52,11 +52,11 @@ Sophie fades its source over 128 synth samples and then skips synthesis.
 
 The 0–127 control-to-Q15 conversion is exact using `258*x + (x == 127)`:
 `32767 = 127*258 + 1`. This removes four signed divisions per active block
-without changing a parameter value. This is in the post-S027 source candidate;
-the tested 0.1.7 release remains available. The FM bandwidth ceiling has a
-conditional signed division on slow-control ticks when the common no-clamp
-case cannot be proven. Replacing it would require an error-bounded reciprocal
-and listening tests at extreme pitch/METAL settings; it is not a free win.
+without changing a parameter value, and it is in the current source and the
+1.2.0 release. The FM bandwidth ceiling has a conditional signed division
+on slow-control ticks when the common no-clamp case cannot be proven.
+Replacing it would require an error-bounded reciprocal and listening tests
+at extreme pitch/METAL settings; it is not a free win.
 
 The render loop keeps the voice's running state in locals for the block
 (`ds_render_core`): the track buffer is `int32_t` like most voice fields, so

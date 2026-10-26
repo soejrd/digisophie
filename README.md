@@ -18,10 +18,13 @@ is what this repository distributes.
   DIGISLICER 2.3 and digi1_mods' Digi Mono, Digi Macro and Digi Poly, with
   digihealth, on OS 1.53 and 1.54). The pages, the knobs, their
   ranges, defaults and value texts, and the LFO page's names are as before.
-  The render is 7-12 % lighter (FUSE 8,230 -> 7,270 cycles a block,
-  SHARD 9,790 -> 9,040), with the same output sample for sample. SOPHIE is
-  still machine 7: projects keep their SOPHIE tracks. Needs core 3.0 or
-  later and machine-pages 1.1, both in elekloader's mod shop.
+  The render loop is also about 7 % smaller: `ds_render_core` drops from
+  936 to 863 M68k instructions and from 1,226 to 1,142 static estimated
+  cycles, with output identical sample for sample on the golden corpus.
+  These are static toolchain measurements; two active voices remain the
+  practical limit without FAST AUDIO. SOPHIE is still machine 7: projects
+  keep their SOPHIE tracks. Needs core 3.0 or later and machine-pages 1.1,
+  both in elekloader's mod shop.
 - **OS 1.54:** SOPHIE and the optional diagnostic also build for Digitakt
   OS 1.54, from the same source and with the same behavior: one
   `.elemod` for each OS. Needs elekloader 0.4.0 or later.
@@ -29,7 +32,8 @@ is what this repository distributes.
 
 The current `.elemod` files are in [release/](release/); 1.1.13's stay
 there for an elekloader without core 3.0 and machine-pages (it builds alone,
-as before, but not beside other machines).
+as before, but not beside other machines). The 1.2.0 files are generated
+from the current sources for OS 1.53 and 1.54.
 
 ---
 

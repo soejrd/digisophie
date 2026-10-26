@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the S033 Sophie release without redistributing firmware.
+# Build the S034 Sophie test image without redistributing firmware.
 set -eu
 
 if [ "$#" -ne 2 ]; then
