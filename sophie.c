@@ -14,17 +14,19 @@ static int32_t ds_mul(int32_t a, int32_t b) { return (a * b) >> 15; }
 
 /* Roughly 1.3 ms slow-control smoothing. At 24 kHz the synth updates these
  * controls every four samples, equivalent to eight 48 kHz output frames. */
-static int32_t ds_slew8(int32_t value, int32_t target)
+static int32_t ds_slew_pow2(int32_t value, int32_t target, unsigned shift)
 {
     int32_t delta = target - value;
-    return value + (delta > 0 ? (delta + 7) / 8 : -((-delta + 7) / 8));
+    uint32_t mag = delta < 0 ? 0u - (uint32_t)delta : (uint32_t)delta;
+    int32_t step = (int32_t)((mag + ((1u << shift) - 1u)) >> shift);
+    return value + (delta < 0 ? -step : step);
 }
 
+static int32_t ds_slew8(int32_t value, int32_t target)
+{ return ds_slew_pow2(value, target, 3); }
+
 static int32_t ds_slew32(int32_t value, int32_t target)
-{
-    int32_t delta = target - value;
-    return value + (delta > 0 ? (delta + 31) / 32 : -((-delta + 31) / 32));
-}
+{ return ds_slew_pow2(value, target, 5); }
 
 /* The fixed-point oscillator uses one cached table read per sample. The
  * previous polynomial required several multiplies for every FM oscillator. */
