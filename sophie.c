@@ -186,7 +186,7 @@ void ds_voice_gate(struct ds_voice *v, int32_t amp_level, int32_t amp_phase)
  * buffer is int32_t like most of its fields, so with them in the struct the compiler would reload and
  * store each one around every output sample. */
 /* the slow controls of a block, as set at its last control tick */
-struct ds_ctl { int32_t color, metal, feedback, fbk, ratio, index, inc, mod_inc; };
+struct ds_ctl { int32_t feedback, fbk, ratio, index, inc, mod_inc; };
 
 static __attribute__((noinline)) void
 ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
@@ -340,7 +340,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     v->rng = rng;
     v->transition = (uint8_t)transition; v->fade_left = (uint8_t)fade_left;
     v->sleeping = (uint8_t)sleeping;
-    ctl->color = color_s; ctl->metal = metal_s; ctl->feedback = feedback; ctl->fbk = fbk;
+    ctl->feedback = feedback; ctl->fbk = fbk;
     ctl->ratio = ratio; ctl->index = index; ctl->inc = inc; ctl->mod_inc = mod_inc;
 }
 
@@ -348,7 +348,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
 void ds_voice_render(struct ds_voice *v, const struct ds_params *p,
                      int trigger, int32_t *out, uint32_t n)
 {
-    struct ds_ctl ctl = {0, 0, 0, 0, 0, 0, 0, 0};
+    struct ds_ctl ctl = {0, 0, 0, 0, 0, 0};
     uint32_t i;
     uint8_t model = p->model & 3u;
     int32_t color_target = ds_u7_q15(p->color);
