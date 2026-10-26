@@ -127,16 +127,16 @@ static int32_t ds_swept_inc(uint16_t base, int8_t amount, int32_t env)
     return ds_clamp(inc, 8, 24576);
 }
 
-static uint32_t ds_rand(struct ds_voice *v)
+static uint32_t ds_rand(uint32_t *rng)
 {
-    uint32_t x = v->rng ? v->rng : 0x534f5048u;
+    uint32_t x = *rng ? *rng : 0x534f5048u;
     x ^= x << 13; x ^= x >> 17; x ^= x << 5;
-    v->rng = x;
+    *rng = x;
     return x;
 }
 
-static int32_t ds_noise(struct ds_voice *v)
-{ return (int32_t)((ds_rand(v) >> 16) & 0xffffu) - 32768; }
+static int32_t ds_noise(uint32_t *rng)
+{ return (int32_t)((ds_rand(rng) >> 16) & 0xffffu) - 32768; }
 
 void ds_voice_init(struct ds_voice *v)
 {
@@ -199,6 +199,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     int32_t color_s, metal_s, feedback_s, velocity_s;
     uint32_t transition, fade_left;
     uint32_t sleeping = v->sleeping;
+    uint32_t rng = v->rng;
     uint16_t phase_inc = p->phase_inc;
     int8_t sweep = p->sweep;
     carrier = v->carrier; mod1 = v->mod1;
@@ -297,7 +298,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
              * raising it restarts from frozen state (white restarts
              * white — statistically identical, inaudible). */
             if (metal_s) {
-                noise_z += ds_mul(ds_noise(v) - noise_z, 655 + ds_mul(color_s, 11469));
+                noise_z += ds_mul(ds_noise(&rng) - noise_z, 655 + ds_mul(color_s, 11469));
                 raw = ds_mul(raw, 27852 - (metal_s >> 2))
                     + ds_mul(noise_z, ds_mul(ds_mul(metal_s, amp), 13762));
             } else {
@@ -334,6 +335,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     v->pitch = pitch; v->amp = amp; v->attack = attack;
     v->feedback_z = feedback_z; v->noise_z = noise_z; v->last = last; v->tail = tail;
     v->color_s = color_s; v->metal_s = metal_s; v->feedback_s = feedback_s; v->velocity_s = velocity_s;
+    v->rng = rng;
     v->transition = (uint8_t)transition; v->fade_left = (uint8_t)fade_left;
     v->sleeping = (uint8_t)sleeping;
     ctl->color = color_s; ctl->metal = metal_s; ctl->feedback = feedback; ctl->fbk = fbk;
