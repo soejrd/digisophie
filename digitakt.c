@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: MIT */
-/* Digitakt Mk1 OS 1.53 and 1.54 adapter for the Sophie fixed-point engine. */
+/* Digitakt Mk1 OS 1.53 and 1.54 adapter for the Sophie fixed-point engine.
+ * Its SRC and LFO pages are drawn by elekloader's machine-pages mod (core 3.0)
+ * from the page below; machine-pages calls ds_inject from its render event. */
 #include "sophie.h"
+#include "digitakt-mk1/core3.h"     /* elekloader's SDK (sdk/include) */
 #ifdef OS154                       /* the Digitakt mk1 1.54 (mod.json's port) */
 #include "os154.h"
 #else                              /* the Digitakt mk1 1.53 */
@@ -10,8 +13,8 @@
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef signed short s16;
-typedef signed long s32;
-typedef unsigned long u32;
+typedef int32_t s32;           /* the engine's int32_t: m68k-elf and m68k-linux-gnu differ on long */
+typedef uint32_t u32;
 
 #define DS_MACHINE 7
 #define TRACKS 8
@@ -99,10 +102,12 @@ static void ds_read_params(s32 track, struct ds_params *p)
     p->velocity = (u8)(((u32)(u16)VEL(track) >> 8) & 0x7fu);
 }
 
-void ds_inject(void)
+/* machine-pages' ev_render_voices, order 20: after playback, before the overdrive */
+void ds_inject(int32_t *blocks)
 {
     u32 triggers = TRIG_BITS;
     s32 track;
+    (void)blocks;                  /* the same blocks as TBUF */
     for (track = 0; track < TRACKS; ++track) {
         struct ds_params params;
         u32 i;
@@ -124,3 +129,38 @@ void ds_inject(void)
         ds_fold_block(TBUF(track), DS_BLOCK_SIZE, params.fold);
     }
 }
+
+/* ---- the SRC and LFO pages (machine-pages) ---------------------------------------------------------
+ * SLICE's page and parameter slots, A..H = ids 0x84..0x8b, so locks, MIDI and the LFOs reach every
+ * control as before. Each knob: its names (the LFO page uses the same), the stock parameter whose
+ * turn and graphic it borrows (look), its range and default (8.8), and its value's text. */
+#define ID_TUNE 0x84
+#define ID_BR 0x86
+
+static int32_t fmt_model(char *buf, int32_t v, int32_t ctx, int32_t m)
+{ (void)ctx; (void)m; ds_fmt_model(buf, v); return 1; }
+static int32_t fmt_sweep(char *buf, int32_t v, int32_t ctx, int32_t m)
+{ (void)ctx; (void)m; ds_fmt_sweep(buf, v); return 1; }
+static int32_t fmt_u7(char *buf, int32_t v, int32_t ctx, int32_t m)
+{ (void)ctx; (void)m; ds_fmt_u7(buf, v); return 1; }
+/* MODEL's four zones on BR's knob: at 0, 42, 84 and 126 */
+static int32_t gfx_model(int32_t v)
+{ return (int32_t)((((u32)v >> 3) & 0xffffu) * 42u); }
+
+#define KNOB(sn, ln, lk, hi, d, f) { .name = sn, .lname = ln, .look = lk, \
+    .flags = CM_RANGE | CM_DEFAULT, .min = 0, .max = hi, .def = d, .fmt = f }
+const struct cm_ui ds_page = {          /* glue.s ds_machine's tail names it */
+    .abi = cm_ui_v3, .page_from = 3, .group = "SOPH",
+    .knob = {
+        [0] = { .name = "TUNE", .lname = "Tune" },
+        [1] = { .name = "MODEL", .lname = "Model", .look = ID_BR, .flags = CM_RANGE | CM_DEFAULT,
+                .min = 0, .max = 0x1f00, .def = 0, .fmt = fmt_model, .gfx = gfx_model },
+        [2] = { .name = "FOLD", .lname = "Fold" },        /* BR's own slot, knob and range */
+        [3] = { .flags = CM_DEFAULT, .def = 0 },          /* SAMP, unused: a new sound starts at 0 */
+        [4] = KNOB("SWEEP", "Sweep", ID_TUNE, 0x7f00, 0x4000, fmt_sweep),
+        [5] = KNOB("METAL", "Metal", ID_BR, 0x7f00, 0x2800, fmt_u7),
+        [6] = KNOB("FBK", "Feedback", ID_BR, 0x7f00, 0x2000, fmt_u7),
+        [7] = KNOB("COLOR", "Color", ID_BR, 0x7f00, 0x4000, fmt_u7),
+    },
+};
+#undef KNOB

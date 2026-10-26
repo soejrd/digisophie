@@ -13,9 +13,13 @@ sites do not describe the Digitakt or Sophie.
 
 ## Audio path
 
-Sophie is a custom SRC machine, ID 7. Core 2.1 registers it; `glue.s` hooks
-the Digitakt's audio render at `0x40077fba` and calls `ds_inject` after the
-stock source work. For each Sophie track, `digitakt.c` reads its current
+Sophie is a custom SRC machine, ID 7. Core registers it, and elekloader's
+machine-pages mod (core 3.0) draws its SRC and LFO pages from the page its
+descriptor names (`ds_page` in `digitakt.c`) and calls `ds_inject` from its
+render event `ev_render_voices` (order 20), at `0x40077fba`, after the stock
+source work. Sophie patches no firmware place of its own (up to 1.1.13 it
+hooked those 17 places itself, so it could not share a build with other
+machines). For each Sophie track, `digitakt.c` reads its current
 controls and trigger state, writes 32 mono `int32_t` source samples to the
 track buffer at `0x80001a18 + 128*track`, then lets the stock AMP, filter,
 mixer and sends process them. Sophie now folds that source buffer with its C
@@ -54,11 +58,21 @@ conditional signed division on slow-control ticks when the common no-clamp
 case cannot be proven. Replacing it would require an error-bounded reciprocal
 and listening tests at extreme pitch/METAL settings; it is not a free win.
 
+The render loop keeps the voice's running state in locals for the block
+(`ds_render_core`): the track buffer is `int32_t` like most voice fields, so
+with the state in the struct the compiler reloads and stores each field around
+every output sample. The soft clip and the FM index conversion are inlined, and
+the index conversion's full-depth multiply (`mod * 32767 >> 15`) is the exact
+`mod - (mod > 0)`. The output is the same, sample for sample and state for
+state, as before (random voices, models, controls, triggers, envelope sleep,
+odd block lengths and the fold).
+
 ## Verification boundaries
 
 `make test` checks audio continuity, model differences, long-held voices,
-retriggering and envelope sleep. `make cross-check` compiles the C and glue
-for the MCF54455. The elekloader build checks the mod against the user's
+retriggering and envelope sleep. `make cross-check ELEKLOADER=/path/to/elekloader`
+compiles the C and glue for the MCF54455 (the page needs elekloader's SDK
+header `digitakt-mk1/core3.h`). The elekloader build checks the mod against the user's
 stock OS and verifies the patched firmware. Those checks do not measure
 hardware CPU use. The optional digihealth mod shows live CPU/DSP load and
 FAST AUDIO in SETTINGS, and `tests/timing_probe.py` can measure an emulated

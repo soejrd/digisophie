@@ -45,10 +45,11 @@ static uint32_t ds_phase_from_radians_q15(int32_t radians)
     return (uint32_t)((radians * 5215) >> 14) << 16;
 }
 
-static uint32_t ds_index_phase(int32_t index_q12, int32_t mod_q15,
+static inline __attribute__((always_inline)) uint32_t ds_index_phase(int32_t index_q12, int32_t mod_q15,
                                int32_t factor_q15)
 {
-    int32_t scaled = ds_mul(mod_q15, factor_q15);
+    /* (mod * 32767) >> 15 is mod - 1 for mod > 0 and mod otherwise (|mod| < 2^15): no multiply */
+    int32_t scaled = factor_q15 == Q15 ? mod_q15 - (mod_q15 > 0) : ds_mul(mod_q15, factor_q15);
     int32_t n = (scaled >> 4) * index_q12;
     uint32_t a = n < 0 ? 0u - (uint32_t)n : (uint32_t)n;
     /* 163/131072 approximates 1/804 within 0.016%. Splitting n before
@@ -72,7 +73,7 @@ static const uint16_t ds_clip_table[65] = {
     21729, 21844
 };
 
-static int32_t ds_soft_clip(int32_t x)
+static inline __attribute__((always_inline)) int32_t ds_soft_clip(int32_t x)
 {
     uint32_t a = x < 0 ? 0u - (uint32_t)x : (uint32_t)x;
     int32_t y;
@@ -178,13 +179,163 @@ void ds_voice_gate(struct ds_voice *v, int32_t amp_level, int32_t amp_phase)
     }
 }
 
+/* The synthesis of synth samples i, i + 2, .. below end (output frames i .. end - 1, end - i even),
+ * into out. The voice's running state is held in locals (the CPU's registers) meanwhile: the output
+ * buffer is int32_t like most of its fields, so with them in the struct the compiler would reload and
+ * store each one around every output sample. */
+/* the slow controls of a block, as set at its last control tick */
+struct ds_ctl { int32_t color, metal, feedback, fbk, ratio, index, inc, mod_inc; };
+
+static __attribute__((noinline)) void
+ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
+               int32_t color_target, int32_t metal_target, int32_t feedback_target,
+               int32_t velocity_target, struct ds_ctl *ctl, int32_t *out, uint32_t i, uint32_t end)
+{
+    int32_t color = ctl->color, metal = ctl->metal, feedback = ctl->feedback, fbk = ctl->fbk;
+    int32_t ratio = ctl->ratio, index = ctl->index, inc = ctl->inc, mod_inc = ctl->mod_inc;
+    uint32_t carrier, mod1;
+    int32_t pitch, amp, attack, feedback_z, noise_z, last, tail;
+    int32_t color_s, metal_s, feedback_s, velocity_s;
+    uint32_t transition, fade_left;
+    carrier = v->carrier; mod1 = v->mod1;
+    pitch = v->pitch; amp = v->amp; attack = v->attack;
+    feedback_z = v->feedback_z; noise_z = v->noise_z; last = v->last; tail = v->tail;
+    color_s = v->color_s; metal_s = v->metal_s; feedback_s = v->feedback_s; velocity_s = v->velocity_s;
+    transition = v->transition; fade_left = v->fade_left;
+    /* A two-operator core at 24 kHz. The models share one inharmonic modulator
+     * and one pitched carrier; only BOOM reads the carrier twice so its clean
+     * low-frequency body survives an aggressively FM'd attack. */
+    for (; i < end; i += 2, out += 2) {
+        int32_t mod, raw, fb, phase_mod;
+        int32_t y;
+        uint32_t control_tick = (i & 7u) == 0;
+        if (control_tick) {
+            color = color_s = ds_slew8(color_s, color_target);
+            metal = metal_s = ds_slew8(metal_s, metal_target);
+            feedback_s = ds_slew8(feedback_s, feedback_target);
+            velocity_s = ds_slew8(velocity_s, velocity_target);
+            feedback = ds_mul(feedback_s, feedback_s);
+            fbk = 8192 + ((metal * 40960) >> 15);
+            switch (model) {
+            default: ratio = 1925 + ((ds_mul(color, color) * 31130) >> 15); break;
+            case 1: ratio = 2457 + ((color * 17203) >> 15); break;
+            case 2: ratio = 5366 + ((color * 24576) >> 15); break;
+            case 3: ratio = 1925 + ((color * 32767) >> 15); break;
+            }
+        }
+        pitch -= (pitch * 48 + 32767) >> 15;
+        amp -= (amp * 10 + 32767) >> 15;
+        if (attack < Q15) attack = ds_slew32(attack, Q15);
+        if (control_tick) {
+            inc = p->sweep ? ds_swept_inc(p->phase_inc, p->sweep, pitch) : p->phase_inc;
+            mod_inc = (inc * ratio) >> 11;
+        }
+        carrier += (uint32_t)inc << 17;
+        mod1 += (uint32_t)mod_inc << 16;
+        /* Diet: with no feedback the loop contributes exactly 0
+         * (ds_mul(z, 0) == 0), so skip the modulator read, the radian
+         * conversion and the smoother update. Bit-exact while FBK stays
+         * 0; raising FBK mid-note reconverges from the frozen smoother
+         * within samples (inaudible). */
+        if (feedback) {
+            fb = ds_mul(feedback_z, feedback);
+            fb = (fb * fbk) >> 12;
+            mod = ds_sin(mod1 + ds_phase_from_radians_q15(fb));
+        } else {
+            mod = ds_sin(mod1);
+        }
+        if (control_tick) {
+            int32_t shape = 8192 + 3 * (8192 + ds_mul(amp, 24576));
+            int32_t metal2 = ds_mul(metal, metal);
+            int32_t rate = (inc * ratio) >> 12;
+            int32_t bandwidth, ceiling;
+            index = ((metal2 >> 2) * shape) >> 13;
+            rate = ((rate >> 4) * (4096 + ((metal * 10240) >> 15))) >> 8;
+            if (rate < 1) rate = 1;
+            bandwidth = 16384 - inc;
+            if (bandwidth < 256) bandwidth = 256;
+            if (index <= 4096 && rate <= 4096 &&
+                index * rate <= bandwidth * 4096) {
+            } else {
+                ceiling = (bandwidth * 4096) / rate;
+                if (index > ceiling) index = ceiling;
+            }
+        }
+        phase_mod = ds_index_phase(index, mod, Q15);
+
+        switch (model) {
+        default:
+            raw = ds_sin(carrier + phase_mod);
+            break;
+        case 1: {
+            int32_t body = ds_sin(carrier);
+            int32_t edge = ds_sin(carrier + phase_mod);
+            int32_t edge_mix = 2048 + ds_mul(metal, amp) / 2;
+            raw = ds_mul(body, Q15 - edge_mix) + ds_mul(edge, edge_mix);
+            break;
+        }
+        case 2: {
+            int32_t body = ds_sin(carrier + phase_mod);
+            int32_t ring = ds_mul(body, mod);
+            int32_t ring_mix = 10240 + (metal >> 1) + (amp >> 3);
+            raw = ds_mul(body, Q15 - ring_mix) + ds_mul(ring, ring_mix);
+            raw += raw >> 2;
+            break;
+        }
+        case 3:
+            raw = ds_sin((carrier & 0xf8000000u) + phase_mod);
+            /* Diet: at METAL 0 the bloom term is exactly 0, so skip the
+             * LPF and the LFSR advance. Bit-exact while METAL stays 0;
+             * raising it restarts from frozen state (white restarts
+             * white — statistically identical, inaudible). */
+            if (metal) {
+                noise_z += ds_mul(ds_noise(v) - noise_z, 655 + ds_mul(color, 11469));
+                raw = ds_mul(raw, 27852 - (metal >> 2))
+                    + ds_mul(noise_z, ds_mul(ds_mul(metal, amp), 13762));
+            } else {
+                raw = ds_mul(raw, 27852);
+            }
+            break;
+        }
+        /* Frozen while feedback is 0 (see above); resumes on raise. */
+        if (feedback)
+            feedback_z += (ds_soft_clip(raw + ((raw * 13) >> 5)) - feedback_z) / 8;
+        if (attack < Q15) raw = ds_mul(raw, attack);
+
+        y = ds_mul(raw, velocity_s);
+        y = ds_soft_clip(y) / 2;
+        if (transition) {
+            y = (y * (64 - (int32_t)transition) + tail * (int32_t)transition) / 64;
+            transition = transition > 2 ? transition - 2 : 0;
+        }
+        if (fade_left) {
+            y = (y * (int32_t)fade_left) / 128;
+            if (--fade_left == 0) {
+                v->sleeping = 1;
+                tail = 0;
+                transition = 0;
+            }
+        }
+        out[0] = ((last + y) / 2) * 65536;
+        out[1] = y * 65536;
+        last = v->sleeping ? 0 : y;
+    }
+    v->carrier = carrier; v->mod1 = mod1;
+    v->pitch = pitch; v->amp = amp; v->attack = attack;
+    v->feedback_z = feedback_z; v->noise_z = noise_z; v->last = last; v->tail = tail;
+    v->color_s = color_s; v->metal_s = metal_s; v->feedback_s = feedback_s; v->velocity_s = velocity_s;
+    v->transition = (uint8_t)transition; v->fade_left = (uint8_t)fade_left;
+    ctl->color = color; ctl->metal = metal; ctl->feedback = feedback; ctl->fbk = fbk;
+    ctl->ratio = ratio; ctl->index = index; ctl->inc = inc; ctl->mod_inc = mod_inc;
+}
+
+
 void ds_voice_render(struct ds_voice *v, const struct ds_params *p,
                      int trigger, int32_t *out, uint32_t n)
 {
+    struct ds_ctl ctl = {0, 0, 0, 0, 0, 0, 0, 0};
     uint32_t i;
     uint8_t model = p->model & 3u;
-    int32_t color = 0, metal = 0, feedback = 0;
-    int32_t ratio = 0, index = 0, inc = 0;
     int32_t color_target = ds_u7_q15(p->color);
     int32_t metal_target = ds_u7_q15(p->metal);
     int32_t feedback_target = ds_u7_q15(p->feedback);
@@ -207,145 +358,21 @@ void ds_voice_render(struct ds_voice *v, const struct ds_params *p,
         v->sleeping = v->quiet_blocks = v->fade_left = 0;
         v->active = 1;
     }
-    /* A two-operator core at 24 kHz. The models share one inharmonic modulator
-     * and one pitched carrier; only BOOM reads the carrier twice so its clean
-     * low-frequency body survives an aggressively FM'd attack. */
-    for (i = 0; i < n; i += 2) {
-        int32_t mod, raw, fb, phase_mod;
-        int32_t y;
-        uint32_t control_tick = (i & 7u) == 0;
-        if (!v->active) {
+    if (!v->active) {
+        for (i = 0; i < n; i++)
             out[i] = 0;
-            if (i + 1 < n) out[i + 1] = 0;
-            continue;
-        }
-        if (control_tick) {
-            color = v->color_s = ds_slew8(v->color_s, color_target);
-            metal = v->metal_s = ds_slew8(v->metal_s, metal_target);
-            v->feedback_s = ds_slew8(v->feedback_s, feedback_target);
-            v->velocity_s = ds_slew8(v->velocity_s, velocity_target);
-            feedback = ds_mul(v->feedback_s, v->feedback_s);
-            /* COLOR visits different inharmonic bands for each topology. */
-            switch (model) {
-            default: ratio = 1925 + ((ds_mul(color, color) * 31130) >> 15); break;
-            case 1: ratio = 2457 + ((color * 17203) >> 15); break;
-            case 2: ratio = 5366 + ((color * 24576) >> 15); break;
-            case 3: ratio = 1925 + ((color * 32767) >> 15); break;
-            }
-        }
-        /* About 28 ms at the equivalent 48 kHz output rate.
-         * The former coefficient collapsed in under 1 ms, making SWEEP
-         * audible mostly as a click. */
-        v->pitch -= (v->pitch * 48 + 32767) >> 15;
-        /* A separate ~135 ms brightness contour lets the high end open,
-         * scrape and settle after the faster pitch snap. AMP still owns the
-         * actual note duration. */
-        v->amp -= (v->amp * 10 + 32767) >> 15;
-        if (v->attack < Q15) v->attack = ds_slew32(v->attack, Q15);
-        /* Ease into feedback and damp its one-sample loop below. This keeps
-         * the useful metallic range from abruptly becoming Nyquist chatter. */
-        /* Four synth samples share one pitch step. Phase stays continuous,
-         * while a moving SWEEP no longer repeats its lookup every sample. */
-        if (control_tick)
-            inc = p->sweep ? ds_swept_inc(p->phase_inc, p->sweep, v->pitch)
-                           : p->phase_inc;
-        v->carrier += (uint32_t)inc << 17;
-        v->mod1 += (uint32_t)((inc * ratio) >> 11) << 16;
-        /* Diet: with no feedback the loop contributes exactly 0
-         * (ds_mul(z, 0) == 0), so skip the modulator read, the radian
-         * conversion and the smoother update. Bit-exact while FBK stays
-         * 0; raising FBK mid-note reconverges from the frozen smoother
-         * within samples (inaudible). */
-        if (feedback) {
-            fb = ds_mul(v->feedback_z, feedback);
-            fb = (fb * (8192 + ((metal * 40960) >> 15))) >> 12;
-            mod = ds_sin(v->mod1 + ds_phase_from_radians_q15(fb));
-        } else {
-            mod = ds_sin(v->mod1);
-        }
-        /* The pitch contour moves slowly relative to four synth samples.
-         * Hold FM depth/ceiling across the same eight output frames as the
-         * other controls; this avoids repeated heavy multiply/divide work. */
-        if (control_tick) {
-            int32_t shape = 8192 + 3 * (8192 + ds_mul(v->amp, 24576));
-            int32_t metal2 = ds_mul(metal, metal);
-            int32_t rate = (inc * ratio) >> 12;
-            int32_t bandwidth, ceiling;
-            index = ((metal2 >> 2) * shape) >> 13; /* Q12 radians */
-            rate = ((rate >> 4) * (4096 + ((metal * 10240) >> 15))) >> 8;
-            if (rate < 1) rate = 1;
-            bandwidth = 16384 - inc;
-            if (bandwidth < 256) bandwidth = 256;
-            if (index <= 4096 && rate <= 4096 &&
-                index * rate <= bandwidth * 4096) {
-                /* The common low/mid-pitch case needs no costly divide. */
-            } else {
-                ceiling = (bandwidth * 4096) / rate;
-                if (index > ceiling) index = ceiling;
-            }
-        }
-        phase_mod = ds_index_phase(index, mod, Q15);
-
-        switch (model) {
-        default: /* FUSE: a bright clang that settles as FM depth recedes. */
-            raw = ds_sin(v->carrier + phase_mod);
-            break;
-        case 1: { /* BOOM: round sine body, with a decaying FM impact skin. */
-            int32_t body = ds_sin(v->carrier);
-            int32_t edge = ds_sin(v->carrier + phase_mod);
-            int32_t edge_mix = 2048 + ds_mul(metal, v->amp) / 2;
-            raw = ds_mul(body, Q15 - edge_mix) + ds_mul(edge, edge_mix);
-            break;
-        }
-        case 2: { /* PIPE: cross-modulated sine through an inharmonic ring. */
-            int32_t body = ds_sin(v->carrier + phase_mod);
-            int32_t ring = ds_mul(body, mod);
-            int32_t ring_mix = 10240 + (metal >> 1) + (v->amp >> 3);
-            /* A little ring remains at METAL 0: COLOR tunes the partial
-             * and FBK bends it, rather than both controls going dead. */
-            raw = ds_mul(body, Q15 - ring_mix) + ds_mul(ring, ring_mix);
-            raw += raw >> 2; /* compensate the ring's lower average level */
-            break;
-        }
-        case 3: /* SHARD: quantized tone and a short, scratchy noise bloom. */
-            raw = ds_sin((v->carrier & 0xf8000000u) + phase_mod);
-            /* Diet: at METAL 0 the bloom term is exactly 0, so skip the
-             * LPF and the LFSR advance. Bit-exact while METAL stays 0;
-             * raising it restarts from frozen state (white restarts
-             * white — statistically identical, inaudible). */
-            if (metal) {
-                v->noise_z += ds_mul(ds_noise(v) - v->noise_z, 655 + ds_mul(color, 11469));
-                raw = ds_mul(raw, 27852 - (metal >> 2))
-                    + ds_mul(v->noise_z, ds_mul(ds_mul(metal, v->amp), 13762));
-            } else {
-                raw = ds_mul(raw, 27852);
-            }
-            break;
-        }
-        /* Frozen while feedback is 0 (see above); resumes on raise. */
-        if (feedback)
-            v->feedback_z += (ds_soft_clip(raw + ((raw * 13) >> 5)) - v->feedback_z) / 8;
-        if (v->attack < Q15) raw = ds_mul(raw, v->attack);
-
-        y = ds_mul(raw, v->velocity_s);
-        /* Fixed output conditioning, not an extra drive control: a full-scale
-         * sine reaches 0.25 FS; hotter model sums saturate smoothly. */
-        y = ds_soft_clip(y) / 2;
-        if (v->transition) {
-            y = (y * (64 - v->transition) + v->tail * v->transition) / 64;
-            v->transition = v->transition > 2 ? v->transition - 2 : 0;
-        }
-        if (v->fade_left) {
-            y = (y * v->fade_left) / 128;
-            if (--v->fade_left == 0) {
-                v->sleeping = 1;
-                v->tail = 0;
-                v->transition = 0;
-            }
-        }
-        out[i] = ((v->last + y) / 2) * 65536;
-        if (i + 1 < n) out[i + 1] = y * 65536;
-        v->last = v->sleeping ? 0 : y;
+        return;
+    }
+    if (n & 1) {                                /* an odd length: its last frame from a whole sample */
+        int32_t pair[2];
+        ds_render_core(v, p, model, color_target, metal_target, feedback_target, velocity_target,
+                       &ctl, out, 0, n - 1);
+        ds_render_core(v, p, model, color_target, metal_target, feedback_target, velocity_target,
+                       &ctl, pair, n - 1, n + 1);
+        out[n - 1] = pair[0];
+    } else {
+        ds_render_core(v, p, model, color_target, metal_target, feedback_target, velocity_target,
+                       &ctl, out, 0, n);
     }
 }
 
