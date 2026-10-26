@@ -4,7 +4,7 @@ CROSS ?= m68k-elf-
 ELEKLOADER ?= ../elekloader
 CROSS_CFLAGS = -mcpu=54415 -mtune=cfv4e -O2 -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -fomit-frame-pointer -Wall -Wextra -Werror
 
-.PHONY: test cross-check golden-check cycle-probe cycle-static
+.PHONY: test cross-check golden-check cycle-probe cycle-static emac-probe
 PYTHON ?= python3
 out:
 	mkdir -p out
@@ -18,6 +18,8 @@ cycle-probe:
 	$(PYTHON) tools/cycle_probe.py
 cycle-static:
 	$(PYTHON) tools/cycle_probe.py --static
+emac-probe:
+	$(PYTHON) tools/emac_probe.py
 cross-check: | out
 	mkdir -p out/cross
 	$(CROSS)as -mcpu=54415 -o out/cross/glue.o glue.s

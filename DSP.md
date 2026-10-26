@@ -89,6 +89,11 @@ code-shape measure, not a run. In this environment Unicorn exits with
 to a hardware CPU-load reading are not available; compare static costs and
 instruction counts between builds of the same driver instead.
 
+`make emac-probe` counts `ds_mul` calls and the largest product while
+rendering representative voices on the host. It shows where an EMAC path
+could apply and whether every product fits `mac.l`'s exact range; it does not
+time the target.
+
 ## Baseline (2026-10-26, 23419d8)
 
 Recorded before the optimization work, with GCC 16.2.0 and binutils 2.47.
@@ -107,6 +112,29 @@ The golden corpus is also identical against `fee5f51`, which confirms PR #5
 kept the render bit-exact. `-mcpu=54415`, `-mcpu=54455` and
 `-mcpu=54415 -mtune=cfv4e` produce byte-identical objects with this
 toolchain, so the target change is documentation and correctness only.
+
+## Optimization results
+
+Measured against the baseline, all with `make golden-check` identical to
+`23419d8` (`sha256 daf840ff34fbe4af`) and with one `muls.l` per `ds_mul`:
+
+| change | `ds_render_core` | static cycles |
+| --- | --- | --- |
+| baseline | 2916 bytes, 936 instructions | 1226 |
+| target, redundant work, one control copy, register params | 2828 bytes, 909 instructions | 1192 |
+| SHARD RNG, shared slew, dead control fields, rare clip | 2736 bytes, 863 instructions | 1142 |
+
+`ds_voice_render` was 638 bytes at baseline. The retained changes are
+bit-exact on the golden corpus and the host tests.
+
+The EMAC experiment was measured, not ported. Sophie calls `ds_mul` 49 times
+per active block (FUSE default), 93 (BOOM/PIPE) and 141 (SHARD), and every
+`|a*b|` in those voices is at most 1,339,777,096, well inside `mac.l`'s exact
+range. Replacing each `muls.l` with `movclr.l`/`mac.l`/`movel` was 2 bytes
+larger per site and did not reduce `ds_render_core`'s static code; it also
+costs an accumulator move to return a 32-bit result. Fusing two products in
+one accumulator changes `(a*b >> 15) + (c*d >> 15)` by up to one LSB, which
+would be a sound change, not an exact one. No EMAC code was retained.
 
 Do not transplant RingTone's Digitone-specific EMAC, Core B, DMA-buffer or
 section-7 techniques into this Digitakt source hook. A new optimization
