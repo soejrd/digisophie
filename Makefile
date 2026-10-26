@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -std=c99 -O2 -Wall -Wextra -Werror
 CROSS ?= m68k-elf-
 ELEKLOADER ?= ../elekloader
-CROSS_CFLAGS = -mcpu=54455 -O2 -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -fomit-frame-pointer -Wall -Wextra -Werror
+CROSS_CFLAGS = -mcpu=54415 -mtune=cfv4e -O2 -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -fomit-frame-pointer -Wall -Wextra -Werror
 
 .PHONY: test cross-check golden-check cycle-probe cycle-static
 PYTHON ?= python3
@@ -20,6 +20,6 @@ cycle-static:
 	$(PYTHON) tools/cycle_probe.py --static
 cross-check: | out
 	mkdir -p out/cross
-	$(CROSS)as -mcpu=54455 -o out/cross/glue.o glue.s
+	$(CROSS)as -mcpu=54415 -o out/cross/glue.o glue.s
 	$(CROSS)gcc $(CROSS_CFLAGS) -I. -I"$(ELEKLOADER)/elekloader/sdk/include" -c digitakt.c -o out/cross/digitakt.o
 	$(CROSS)gcc $(CROSS_CFLAGS) -I. -c sophie.c -o out/cross/sophie.o

@@ -71,7 +71,7 @@ odd block lengths and the fold).
 
 `make test` checks audio continuity, model differences, long-held voices,
 retriggering and envelope sleep. `make cross-check ELEKLOADER=/path/to/elekloader`
-compiles the C and glue for the MCF54455 (the page needs elekloader's SDK
+compiles the C and glue for the MCF54415 (the page needs elekloader's SDK
 header `digitakt-mk1/core3.h`). The elekloader build checks the mod against the user's
 stock OS and verifies the patched firmware. Those checks do not measure
 hardware CPU use. The optional digihealth mod shows live CPU/DSP load and
