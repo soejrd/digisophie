@@ -136,6 +136,16 @@ costs an accumulator move to return a 32-bit result. Fusing two products in
 one accumulator changes `(a*b >> 15) + (c*d >> 15)` by up to one LSB, which
 would be a sound change, not an exact one. No EMAC code was retained.
 
+The voice also carried `mod2`, `mod3`, `sub`, `upper` and `split`, which
+were reset on every trigger but never read by the synth or either adapter.
+They were residual layout from an earlier design, not models or controls.
+Removing them leaves the audio bit-identical (`make golden-audio` against
+`23419d8`, `sha256 32e80b9dc32cc40b`) and shrinks `struct ds_voice` from
+84 to 64 bytes. `ds_voice_init` drops to 76 bytes and the TEXT section to
+3746 bytes. The state hash changes because the struct layout does; the
+Digitakt and Digitone adapters only allocate the struct and do not read
+those fields, and both host suites pass.
+
 Do not transplant RingTone's Digitone-specific EMAC, Core B, DMA-buffer or
 section-7 techniques into this Digitakt source hook. A new optimization
 should preserve the audible result or have an explicit sonic reason, pass

@@ -55,8 +55,12 @@ def main():
     ap.add_argument("--ref", default="HEAD")
     ap.add_argument("--cc", default="cc")
     ap.add_argument("--flags", default="-std=c99 -O2 -Wall -Wextra -Werror")
+    ap.add_argument("--audio-only", action="store_true",
+                    help="hash audio only (for a deliberate voice-layout change)")
     args = ap.parse_args()
     flags = args.flags.split()
+    if args.audio_only:
+        flags.append("-DDS_GOLDEN_AUDIO_ONLY")
     driver = ROOT / "tests" / "golden_dump.c"
     ref = git("rev-parse", "--short", args.ref).decode().strip()
 

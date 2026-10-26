@@ -14,6 +14,8 @@ test: out/test_sophie
 	./out/test_sophie
 golden-check:
 	$(PYTHON) tools/golden_diff.py --ref HEAD
+golden-audio:
+	$(PYTHON) tools/golden_diff.py --ref HEAD --audio-only
 cycle-probe:
 	$(PYTHON) tools/cycle_probe.py
 cycle-static:

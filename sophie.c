@@ -142,8 +142,7 @@ static int32_t ds_noise(uint32_t *rng)
 
 void ds_voice_init(struct ds_voice *v)
 {
-    v->carrier = v->mod1 = v->mod2 = v->mod3 = 0;
-    v->sub = v->upper = v->split = 0;
+    v->carrier = v->mod1 = 0;
     v->amp = v->pitch = v->attack = v->feedback_z = v->noise_z = 0;
     v->rng = 0x534f5048u;
     v->color_s = v->metal_s = v->feedback_s = v->velocity_s = 0;
@@ -363,8 +362,7 @@ void ds_voice_render(struct ds_voice *v, const struct ds_params *p,
         v->tail = v->last;
         v->transition = 64;
         v->model = model;
-        v->carrier = v->mod1 = v->mod2 = v->mod3 = 0;
-        v->sub = v->upper = v->split = 0;
+        v->carrier = v->mod1 = 0;
         v->amp = Q15;
         v->pitch = Q15;
         v->attack = 0;

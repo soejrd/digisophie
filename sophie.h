@@ -25,9 +25,6 @@ struct ds_params {
 struct ds_voice {
     uint32_t carrier;
     uint32_t mod1;
-    uint32_t mod2;
-    uint32_t mod3;
-    uint32_t sub, upper, split;
     int32_t amp;
     int32_t pitch;
     int32_t attack;

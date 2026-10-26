@@ -44,8 +44,12 @@ static void render(uint32_t n, int trigger)
 
 static void end(const char *name)
 {
+#ifndef DS_GOLDEN_AUDIO_ONLY
     state_hash = fnv1a(state_hash, &v, sizeof v);
     printf("%-28s audio=%08x state=%08x\n", name, audio_hash, state_hash);
+#else
+    printf("%-28s audio=%08x\n", name, audio_hash);
+#endif
     ++cases;
 }
 
