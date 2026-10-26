@@ -193,10 +193,12 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
 {
     int32_t color = ctl->color, metal = ctl->metal, feedback = ctl->feedback, fbk = ctl->fbk;
     int32_t ratio = ctl->ratio, index = ctl->index, inc = ctl->inc, mod_inc = ctl->mod_inc;
+    int32_t rate = 0;
     uint32_t carrier, mod1;
     int32_t pitch, amp, attack, feedback_z, noise_z, last, tail;
     int32_t color_s, metal_s, feedback_s, velocity_s;
     uint32_t transition, fade_left;
+    uint32_t sleeping = v->sleeping;
     carrier = v->carrier; mod1 = v->mod1;
     pitch = v->pitch; amp = v->amp; attack = v->attack;
     feedback_z = v->feedback_z; noise_z = v->noise_z; last = v->last; tail = v->tail;
@@ -227,8 +229,11 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         amp -= (amp * 10 + 32767) >> 15;
         if (attack < Q15) attack = ds_slew32(attack, Q15);
         if (control_tick) {
+            int32_t inc_ratio;
             inc = p->sweep ? ds_swept_inc(p->phase_inc, p->sweep, pitch) : p->phase_inc;
-            mod_inc = (inc * ratio) >> 11;
+            inc_ratio = inc * ratio;
+            mod_inc = inc_ratio >> 11;
+            rate = inc_ratio >> 12;
         }
         carrier += (uint32_t)inc << 17;
         mod1 += (uint32_t)mod_inc << 16;
@@ -247,7 +252,6 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         if (control_tick) {
             int32_t shape = 8192 + 3 * (8192 + ds_mul(amp, 24576));
             int32_t metal2 = ds_mul(metal, metal);
-            int32_t rate = (inc * ratio) >> 12;
             int32_t bandwidth, ceiling;
             index = ((metal2 >> 2) * shape) >> 13;
             rate = ((rate >> 4) * (4096 + ((metal * 10240) >> 15))) >> 8;
@@ -299,7 +303,9 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         }
         /* Frozen while feedback is 0 (see above); resumes on raise. */
         if (feedback)
-            feedback_z += (ds_soft_clip(raw + ((raw * 13) >> 5)) - feedback_z) / 8;
+            /* ((raw * 45) >> 5) is exactly raw + ((raw * 13) >> 5): the
+             * extra 32*raw is divisible before the floor shift. */
+            feedback_z += (ds_soft_clip((raw * 45) >> 5) - feedback_z) / 8;
         if (attack < Q15) raw = ds_mul(raw, attack);
 
         y = ds_mul(raw, velocity_s);
@@ -311,20 +317,21 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         if (fade_left) {
             y = (y * (int32_t)fade_left) / 128;
             if (--fade_left == 0) {
-                v->sleeping = 1;
+                sleeping = 1;
                 tail = 0;
                 transition = 0;
             }
         }
         out[0] = ((last + y) / 2) * 65536;
         out[1] = y * 65536;
-        last = v->sleeping ? 0 : y;
+        last = sleeping ? 0 : y;
     }
     v->carrier = carrier; v->mod1 = mod1;
     v->pitch = pitch; v->amp = amp; v->attack = attack;
     v->feedback_z = feedback_z; v->noise_z = noise_z; v->last = last; v->tail = tail;
     v->color_s = color_s; v->metal_s = metal_s; v->feedback_s = feedback_s; v->velocity_s = velocity_s;
     v->transition = (uint8_t)transition; v->fade_left = (uint8_t)fade_left;
+    v->sleeping = (uint8_t)sleeping;
     ctl->color = color; ctl->metal = metal; ctl->feedback = feedback; ctl->fbk = fbk;
     ctl->ratio = ratio; ctl->index = index; ctl->inc = inc; ctl->mod_inc = mod_inc;
 }
