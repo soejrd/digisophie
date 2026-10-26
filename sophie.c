@@ -191,7 +191,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
                int32_t color_target, int32_t metal_target, int32_t feedback_target,
                int32_t velocity_target, struct ds_ctl *ctl, int32_t *out, uint32_t i, uint32_t end)
 {
-    int32_t color = ctl->color, metal = ctl->metal, feedback = ctl->feedback, fbk = ctl->fbk;
+    int32_t feedback = ctl->feedback, fbk = ctl->fbk;
     int32_t ratio = ctl->ratio, index = ctl->index, inc = ctl->inc, mod_inc = ctl->mod_inc;
     int32_t rate = 0;
     uint32_t carrier, mod1;
@@ -203,6 +203,8 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     pitch = v->pitch; amp = v->amp; attack = v->attack;
     feedback_z = v->feedback_z; noise_z = v->noise_z; last = v->last; tail = v->tail;
     color_s = v->color_s; metal_s = v->metal_s; feedback_s = v->feedback_s; velocity_s = v->velocity_s;
+    /* COLOR and METAL equal their smoothed values after every control tick,
+     * so the smoothed locals are the only copy in the loop. */
     transition = v->transition; fade_left = v->fade_left;
     /* A two-operator core at 24 kHz. The models share one inharmonic modulator
      * and one pitched carrier; only BOOM reads the carrier twice so its clean
@@ -212,17 +214,17 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         int32_t y;
         uint32_t control_tick = (i & 7u) == 0;
         if (control_tick) {
-            color = color_s = ds_slew8(color_s, color_target);
-            metal = metal_s = ds_slew8(metal_s, metal_target);
+            color_s = ds_slew8(color_s, color_target);
+            metal_s = ds_slew8(metal_s, metal_target);
             feedback_s = ds_slew8(feedback_s, feedback_target);
             velocity_s = ds_slew8(velocity_s, velocity_target);
             feedback = ds_mul(feedback_s, feedback_s);
-            fbk = 8192 + ((metal * 40960) >> 15);
+            fbk = 8192 + ((metal_s * 40960) >> 15);
             switch (model) {
-            default: ratio = 1925 + ((ds_mul(color, color) * 31130) >> 15); break;
-            case 1: ratio = 2457 + ((color * 17203) >> 15); break;
-            case 2: ratio = 5366 + ((color * 24576) >> 15); break;
-            case 3: ratio = 1925 + ((color * 32767) >> 15); break;
+            default: ratio = 1925 + ((ds_mul(color_s, color_s) * 31130) >> 15); break;
+            case 1: ratio = 2457 + ((color_s * 17203) >> 15); break;
+            case 2: ratio = 5366 + ((color_s * 24576) >> 15); break;
+            case 3: ratio = 1925 + ((color_s * 32767) >> 15); break;
             }
         }
         pitch -= (pitch * 48 + 32767) >> 15;
@@ -251,10 +253,10 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         }
         if (control_tick) {
             int32_t shape = 8192 + 3 * (8192 + ds_mul(amp, 24576));
-            int32_t metal2 = ds_mul(metal, metal);
+            int32_t metal2 = ds_mul(metal_s, metal_s);
             int32_t bandwidth, ceiling;
             index = ((metal2 >> 2) * shape) >> 13;
-            rate = ((rate >> 4) * (4096 + ((metal * 10240) >> 15))) >> 8;
+            rate = ((rate >> 4) * (4096 + ((metal_s * 10240) >> 15))) >> 8;
             if (rate < 1) rate = 1;
             bandwidth = 16384 - inc;
             if (bandwidth < 256) bandwidth = 256;
@@ -274,14 +276,14 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         case 1: {
             int32_t body = ds_sin(carrier);
             int32_t edge = ds_sin(carrier + phase_mod);
-            int32_t edge_mix = 2048 + ds_mul(metal, amp) / 2;
+            int32_t edge_mix = 2048 + ds_mul(metal_s, amp) / 2;
             raw = ds_mul(body, Q15 - edge_mix) + ds_mul(edge, edge_mix);
             break;
         }
         case 2: {
             int32_t body = ds_sin(carrier + phase_mod);
             int32_t ring = ds_mul(body, mod);
-            int32_t ring_mix = 10240 + (metal >> 1) + (amp >> 3);
+            int32_t ring_mix = 10240 + (metal_s >> 1) + (amp >> 3);
             raw = ds_mul(body, Q15 - ring_mix) + ds_mul(ring, ring_mix);
             raw += raw >> 2;
             break;
@@ -292,10 +294,10 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
              * LPF and the LFSR advance. Bit-exact while METAL stays 0;
              * raising it restarts from frozen state (white restarts
              * white — statistically identical, inaudible). */
-            if (metal) {
-                noise_z += ds_mul(ds_noise(v) - noise_z, 655 + ds_mul(color, 11469));
-                raw = ds_mul(raw, 27852 - (metal >> 2))
-                    + ds_mul(noise_z, ds_mul(ds_mul(metal, amp), 13762));
+            if (metal_s) {
+                noise_z += ds_mul(ds_noise(v) - noise_z, 655 + ds_mul(color_s, 11469));
+                raw = ds_mul(raw, 27852 - (metal_s >> 2))
+                    + ds_mul(noise_z, ds_mul(ds_mul(metal_s, amp), 13762));
             } else {
                 raw = ds_mul(raw, 27852);
             }
@@ -332,7 +334,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     v->color_s = color_s; v->metal_s = metal_s; v->feedback_s = feedback_s; v->velocity_s = velocity_s;
     v->transition = (uint8_t)transition; v->fade_left = (uint8_t)fade_left;
     v->sleeping = (uint8_t)sleeping;
-    ctl->color = color; ctl->metal = metal; ctl->feedback = feedback; ctl->fbk = fbk;
+    ctl->color = color_s; ctl->metal = metal_s; ctl->feedback = feedback; ctl->fbk = fbk;
     ctl->ratio = ratio; ctl->index = index; ctl->inc = inc; ctl->mod_inc = mod_inc;
 }
 
