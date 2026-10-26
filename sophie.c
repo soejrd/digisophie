@@ -199,6 +199,8 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
     int32_t color_s, metal_s, feedback_s, velocity_s;
     uint32_t transition, fade_left;
     uint32_t sleeping = v->sleeping;
+    uint16_t phase_inc = p->phase_inc;
+    int8_t sweep = p->sweep;
     carrier = v->carrier; mod1 = v->mod1;
     pitch = v->pitch; amp = v->amp; attack = v->attack;
     feedback_z = v->feedback_z; noise_z = v->noise_z; last = v->last; tail = v->tail;
@@ -232,7 +234,7 @@ ds_render_core(struct ds_voice *v, const struct ds_params *p, uint8_t model,
         if (attack < Q15) attack = ds_slew32(attack, Q15);
         if (control_tick) {
             int32_t inc_ratio;
-            inc = p->sweep ? ds_swept_inc(p->phase_inc, p->sweep, pitch) : p->phase_inc;
+            inc = sweep ? ds_swept_inc(phase_inc, sweep, pitch) : phase_inc;
             inc_ratio = inc * ratio;
             mod_inc = inc_ratio >> 11;
             rate = inc_ratio >> 12;

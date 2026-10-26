@@ -227,7 +227,7 @@ def static_profile(source, digiemu, cross, flags):
         start = size = None
         for line in nm.splitlines():
             f = line.split()
-            if len(f) == 4 and f[3] == "ds_render_core":
+            if len(f) == 4 and f[3].startswith("ds_render_core"):
                 start, size = int(f[0], 16), int(f[1], 16)
         if start is None:
             raise SystemExit("ds_render_core not found in " + str(obj))
