@@ -2,11 +2,22 @@
 
 ## Objective
 
-Land PR #5 only after reviewing its two changes separately, then reduce the
-audible render cost on the MCF54415 without changing the sound unless a change
-is deliberately auditioned. Keep the existing fixed-point engine and its
-portable host tests; generated `.elemod` files are verification inputs, not
-code to review line by line.
+Reduce the audible render cost on the MCF54415 without changing the sound
+unless a change is deliberately auditioned. Keep the existing fixed-point
+engine and its portable host tests; generated `.elemod` files are verification
+inputs, not code to review line by line.
+
+## Current state
+
+- Local `main`: `0876e82` applies PR #5 (including its two release files);
+  later commits add and update this plan. The tree also quotes the elekloader
+  SDK include path in `Makefile`, fixing checkouts whose path contains spaces.
+- `origin/main` is still `fee5f51`; local `main` is ahead and has **not** been
+  pushed. PR #5 is still open on GitHub.
+- No real merge commit with PR #5's head exists yet. The local commit has the
+  reviewed PR content, not the PR branch as a parent.
+- Optimize in new commits on local `main`. Do not amend or rewrite `0876e82`,
+  and do not push until the publishing step below.
 
 ## 1. Pin the baseline
 
@@ -18,40 +29,35 @@ code to review line by line.
   if available; otherwise use instruction counts and a hardware CPU-load
   reading. Do not use the PR's performance table as our baseline.
 
-## 2. Review and incorporate PR #5
+## 2. PR #5 status and publishing
 
-Prerequisite: GitHub access to `github.com`, `api.github.com` and
-`patch-diff.githubusercontent.com`, or a user-supplied `/tmp/pr5.diff`.
-Fetch `refs/pull/5/head`; do not merge from the PR description alone.
+PR #5 has been reviewed and incorporated into local `main`; do not repeat the
+source review. Evidence: the diff applied cleanly, `make test` and
+`make cross-check` pass, and a 6,000-block randomized differential against
+`fee5f51` produced identical output and voice-state hashes. The page descriptor
+matches the old names, ranges, defaults and knob mappings; machine-pages calls
+`ds_inject` at the same `0x80001a18` buffer SOPHIE already uses. The
+`mod - (mod > 0)` shortcut is exact here because the sine table's minimum is
+`-32767`, never `-32768`.
 
-Review the two commits separately:
+**Do not push yet.** Pushing local `main` without wiring in the real PR head
+would publish the content but leave PR #5 open, since GitHub does not match
+patch-equivalent commits. Do not click GitHub's merge button either; that would
+make remote `main` diverge from local work.
 
-1. `3ea055b` — render rewrite (`sophie.c`).
-   - Verify the claimed bit-exact change: the full-depth multiply to
-     `mod - (mod > 0)` for the Q15 index, no signed-overflow surprises, odd
-     block lengths, retriggers, sleep/wake, and state written back after the
-     block.
-   - Check that inlining soft clip/index conversion keeps a cold fallback and
-     does not turn a rare path into an unsafe assumption.
-   - Compare exact output and voice state against `fee5f51`; run host and
-     cross-build tests. If it differs, isolate the change rather than accepting
-     the claim.
-2. `82a52d7` — machine-pages integration (`digitakt.c`, `glue.s`, `mod.json`,
-   `Makefile`, `scripts/build.sh`).
-   - Confirm the `"UI30"` descriptor, `struct cm_ui` layout, machine 7,
-     `page_from`, knob names/ranges/defaults/value text, and the `ev_render_voices`
-     order-20 subscription match the local core 3.0/machine-pages 1.1 contract.
-   - Confirm the 17 old firmware sites are gone, both OS ports still match,
-     `requires`/`resources.core` are correct, and saved SOPHIE tracks remain
-     machine 7.
-   - Verify `scripts/build.sh` builds machine-pages and the 1.53/1.54 variants;
-     keep the 1.1.13 release for older elekloader.
+After optimization commits are ready, publish with the real PR history:
 
-Review `DSP.md`, `README.md`, `os*.inc`, and `release/` only for stale claims,
-wrong versions, or accidental changes; rebuild artifacts rather than auditing
-their bytes. Integrate in commit order: bring `3ea055b` onto a review branch
-and verify it in isolation, then add `82a52d7`. Keep the two commits intact
-until both pass, so an audio regression is attributable.
+```sh
+git fetch origin pull/5/head:pr5
+git merge --no-ff pr5        # keep the quoted Makefile include if it conflicts
+make test && make cross-check ELEKLOADER=/path/to/elekloader
+git log --oneline --graph -6 # confirm PR head is a parent and review commits remain
+git push origin main
+```
+
+Once pushed, GitHub should mark PR #5 merged. If fetching is unavailable, the
+owner can run the fetch/merge commands; as a last resort, push and close PR #5
+with a comment pointing to the pushed commit, but that is less tidy.
 
 ## 3. Exact C and codegen wins
 
